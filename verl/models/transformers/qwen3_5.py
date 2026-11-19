@@ -16,6 +16,7 @@ import logging
 import os
 from dataclasses import dataclass
 from importlib import import_module
+import importlib.util
 from inspect import signature
 from typing import Optional
 
@@ -206,6 +207,12 @@ def qwen3_5_gated_delta_net_forward(
     module = import_module(self.__class__.__module__)
     hidden_states = module.apply_mask_to_padding_states(hidden_states, attention_mask)
     causal_conv1d_fn = self.causal_conv1d_fn if hasattr(self, "causal_conv1d_fn") else module.causal_conv1d_fn
+    if causal_conv1d_fn is not None and importlib.util.find_spec("causal_conv1d") is None:
+        # Without the causal-conv1d package, HF resolves this to a torch fallback
+        # that takes **kwargs and drops seq_idx: on packed input the conv then runs
+        # across sequence boundaries (each later sequence's first k-1 tokens see the
+        # previous one). Use the per-sequence fallback below instead.
+        causal_conv1d_fn = None
     causal_conv1d_update = (
         self.causal_conv1d_update if hasattr(self, "causal_conv1d_update") else module.causal_conv1d_update
     )
